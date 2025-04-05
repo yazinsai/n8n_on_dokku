@@ -13,7 +13,8 @@ RUN chown node:node /docker-entrypoint.sh && \
     chmod +x /docker-entrypoint.sh
 
 # Allow specific external modules
-ENV NODE_FUNCTION_ALLOW_EXTERNAL="@paralleldrive/cuid2,franc,@distube/ytdl-core"
+# Make sure to prepend 'node-fetch' to the list
+ENV NODE_FUNCTION_ALLOW_EXTERNAL="node-fetch,@paralleldrive/cuid2,franc,@distube/ytdl-core"
 ENV NODE_FUNCTION_ALLOW_BUILTIN="*"
 
 USER node
