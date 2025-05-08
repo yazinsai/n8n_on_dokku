@@ -65,7 +65,7 @@ Set the webhook URL for your n8n instance:
 dokku config:set n8n WEBHOOK_URL=http://n8n.example.com
 ```
 
-### 3. Configure the Domain
+### 3. Configure the Domain and Ports
 
 Set the domain for your app to enable routing:
 
@@ -73,35 +73,50 @@ Set the domain for your app to enable routing:
 dokku domains:set n8n n8n.example.com
 ```
 
+Map the internal port `5678` to the external port `80`:
+
+```bash
+dokku ports:set n8n http:80:5678
+```
+
 ### 4. Deploy the App
 
-#### Clone the Repository
+You can deploy the app to your Dokku server using one of the following methods:
 
-Clone this repository to your local machine:
+#### Option 1: Deploy Using `dokku git:sync`
 
-```bash
-# Via SSH
-git clone git@github.com:d1ceward-on-dokku/n8n_on_dokku.git
-
-# Via HTTPS
-git clone https://github.com/d1ceward-on-dokku/n8n_on_dokku.git
-```
-
-#### Add Dokku as a Remote
-
-Add your Dokku server as a Git remote:
+If your repository is hosted on a remote Git server with an HTTPS URL, you can deploy the app directly to your Dokku server using `dokku git:sync`. This method also triggers a build process automatically. Run the following command:
 
 ```bash
-git remote add dokku dokku@example.com:n8n
+dokku git:sync --build n8n https://github.com/d1ceward-on-dokku/n8n_on_dokku.git
 ```
 
-#### Push the App to Dokku
+This will fetch the code from the specified repository, build the app, and deploy it to your Dokku server.
 
-Push the app to your Dokku server:
+#### Option 2: Clone the Repository and Push Manually
 
-```bash
-git push dokku master
-```
+If you prefer to work with the repository locally, you can clone it to your machine and push it to your Dokku server manually:
+
+1. Clone the repository:
+
+    ```bash
+    # Via HTTPS
+    git clone https://github.com/d1ceward-on-dokku/n8n_on_dokku.git
+    ```
+
+2. Add your Dokku server as a Git remote:
+
+    ```bash
+    git remote add dokku dokku@example.com:n8n
+    ```
+
+3. Push the app to your Dokku server:
+
+    ```bash
+    git push dokku master
+    ```
+
+Choose the method that best suits your workflow.
 
 ### 5. Enable SSL (Optional)
 
@@ -110,7 +125,7 @@ Secure your app with an SSL certificate from Let's Encrypt:
 1. Add the HTTPS port:
 
     ```bash
-    dokku proxy:ports-add n8n https:443:5678
+    dokku ports:add n8n https:443:5678
     ```
 
 2. Install the Let's Encrypt plugin:
