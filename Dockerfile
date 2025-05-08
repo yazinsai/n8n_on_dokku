@@ -2,15 +2,11 @@ ARG N8N_VERSION="1.91.3"
 
 FROM n8nio/n8n:${N8N_VERSION}
 
-USER root
+COPY ./entrypoint.sh /custom-entrypoint.sh
 
-COPY ./entrypoint.sh /docker-entrypoint.sh
-
-RUN chown node:node /docker-entrypoint.sh && \
-    chmod +x /docker-entrypoint.sh
-
+ENV SHELL /bin/sh
 USER node
 
-EXPOSE 5000/tcp
+EXPOSE 5678/tcp
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+ENTRYPOINT ["/custom-entrypoint.sh"]
