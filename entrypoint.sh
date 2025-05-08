@@ -35,4 +35,11 @@ export DB_POSTGRESDB_DATABASE="$N8N_DB_DATABASE"
 export DB_POSTGRESDB_USER="$N8N_DB_USER"
 export DB_POSTGRESDB_PASSWORD="$N8N_DB_PASSWORD"
 
-tini -- /docker-entrypoint.sh
+if [ -d /opt/custom-certificates ]; then
+  echo "Trusting custom certificates from /opt/custom-certificates."
+  export NODE_OPTIONS="--use-openssl-ca $NODE_OPTIONS"
+  export SSL_CERT_DIR=/opt/custom-certificates
+  c_rehash /opt/custom-certificates
+fi
+
+exec n8n
