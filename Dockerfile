@@ -7,6 +7,4 @@ COPY ./entrypoint.sh /custom-entrypoint.sh
 ENV SHELL /bin/sh
 USER node
 
-EXPOSE 5678/tcp
-
 ENTRYPOINT ["/custom-entrypoint.sh"]
