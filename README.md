@@ -67,7 +67,7 @@ dokku config:set n8n WEBHOOK_URL=http://n8n.example.com
 
 ### 3. Configure Persistent Storage
 
-To persist uploaded data between restarts, create a folder on the host machine and mount it to the app container:
+To persist data between restarts (like community nodes, logs, etc...), create a folder on the host machine and mount it to the app container:
 
 ```bash
 dokku storage:ensure-directory n8n --chown false
