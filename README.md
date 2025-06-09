@@ -65,7 +65,17 @@ Set the webhook URL for your n8n instance:
 dokku config:set n8n WEBHOOK_URL=http://n8n.example.com
 ```
 
-### 3. Configure the Domain and Ports
+### 3. Configure Persistent Storage
+
+To persist uploaded data between restarts, create a folder on the host machine and mount it to the app container:
+
+```bash
+dokku storage:ensure-directory n8n --chown false
+chown 1000:1000 /var/lib/dokku/data/storage/n8n
+dokku storage:mount n8n /var/lib/dokku/data/storage/n8n:/home/node/.n8n
+```
+
+### 4. Configure the Domain and Ports
 
 Set the domain for your app to enable routing:
 
@@ -79,7 +89,7 @@ Map the internal port `5678` to the external port `80`:
 dokku ports:set n8n http:80:5678
 ```
 
-### 4. Deploy the App
+### 5. Deploy the App
 
 You can deploy the app to your Dokku server using one of the following methods:
 
@@ -118,7 +128,7 @@ If you prefer to work with the repository locally, you can clone it to your mach
 
 Choose the method that best suits your workflow.
 
-### 5. Enable SSL (Optional)
+### 6. Enable SSL (Optional)
 
 Secure your app with an SSL certificate from Let's Encrypt:
 
