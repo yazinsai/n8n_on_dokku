@@ -16,7 +16,7 @@ CURRENT_RELEASE=$(git tag --sort=version:refname | tail -1)
 RELEASE=$(curl -s https://api.github.com/repos/n8n-io/n8n/releases?per_page=100 \
   | jq -r '.[].tag_name' \
   | sed 's/n8n@//g; s/\"//g' \
-  | grep -E '^1\\.[0-9]+\\.[0-9]+$' \
+  | grep -E '^1\.[0-9]+\.[0-9]+$' \
   | sort -V \
   | tail -1)
 
