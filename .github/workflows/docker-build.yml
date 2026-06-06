@@ -1,0 +1,19 @@
+name: Docker build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build n8n image
+        run: docker build -t n8n-on-dokku .
+
+      - name: Build runner image
+        run: docker build -f Dockerfile.runners -t n8n-on-dokku-runners .

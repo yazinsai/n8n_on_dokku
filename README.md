@@ -1,74 +1,129 @@
 ![](.github/images/repo_header.png)
 
-[![n8n](https://img.shields.io/badge/n8n-1.123.50-blue.svg)](https://github.com/n8n-io/n8n/releases/tag/n8n%401.123.50)
+[![n8n](https://img.shields.io/badge/n8n-2.25.5-blue.svg)](https://github.com/n8n-io/n8n/releases/tag/n8n%402.25.5)
 [![Dokku](https://img.shields.io/badge/Dokku-Repo-blue.svg)](https://github.com/dokku/dokku)
-# Run n8n on Dokku
 
-> **⚠️ Important: This project currently supports only n8n 1.x.x. Upgrading to n8n 2.x.x is not yet possible here, as version 2.x.x requires a separate Docker runner container. Contributions to add 2.x.x support are welcome!**
+# Run n8n 2.x on Dokku
 
 ## Overview
 
-This guide explains how to deploy [n8n](https://n8n.io/), an extendable workflow automation tool, on a [Dokku](http://dokku.viewdocs.io/dokku/) host. Dokku is a lightweight PaaS that simplifies deploying and managing applications using Docker.
+n8n 2.x runs Code node execution through task runners. For production Dokku deployments, this repo deploys two Dokku apps from the same Git repository:
+
+- `n8n`: the main n8n web UI, API, webhooks, and task broker
+- `n8n-runners`: the external task runner container for JavaScript and Python Code nodes
+
+The apps share a private Dokku network. Only the main `n8n` app is publicly exposed; the runner app connects privately to the task broker at `http://n8n.web:5679`.
+
+Both images are pinned to the same n8n version:
+
+- `Dockerfile` uses `n8nio/n8n:${N8N_VERSION}`
+- `Dockerfile.runners` uses `n8nio/runners:${N8N_VERSION}`
+
+The runner image preserves the custom JavaScript Code-node packages from this repo: `node-fetch`, `@paralleldrive/cuid2`, `franc`, and `@distube/ytdl-core`.
 
 ## Prerequisites
 
-Before proceeding, ensure you have the following:
+- A working [Dokku](https://dokku.com/) host
+- The [dokku-postgres plugin](https://github.com/dokku/dokku-postgres)
+- Dokku network support
+- Optional: the [dokku-letsencrypt plugin](https://github.com/dokku/dokku-letsencrypt)
 
-- A working [Dokku host](http://dokku.viewdocs.io/dokku/getting-started/installation/).
-- The [PostgreSQL plugin](https://github.com/dokku/dokku-postgres) installed on Dokku.
-- (Optional) The [Let's Encrypt plugin](https://github.com/dokku/dokku-letsencrypt) for SSL certificates.
+## Setup
 
-## Setup Instructions
+Run these commands on your Dokku host unless noted otherwise.
 
-### 1. Create the App
-
-Log into your Dokku host and create the `n8n` app:
+### 1. Create the apps
 
 ```bash
 dokku apps:create n8n
+dokku apps:create n8n-runners
 ```
 
-### 2. Configure the App
+### 2. Set Dockerfile paths
 
-#### Install, Create, and Link PostgreSQL Plugin
-
-1. Install the PostgreSQL plugin:
-
-    ```bash
-    dokku plugin:install https://github.com/dokku/dokku-postgres.git postgres
-    ```
-
-2. Create a PostgreSQL service:
-
-    ```bash
-    dokku postgres:create n8n
-    ```
-
-3. Link the PostgreSQL service to the app:
-
-    ```bash
-    dokku postgres:link n8n n8n
-    ```
-
-#### Set the Encryption Key
-
-Generate and set an encryption key for n8n:
+Both apps build from this repo, but each app uses a different Dockerfile.
 
 ```bash
-dokku config:set n8n N8N_ENCRYPTION_KEY=$(echo `openssl rand -base64 45` | tr -d \=+ | cut -c 1-32)
+dokku builder-dockerfile:set n8n dockerfile-path Dockerfile
+dokku builder-dockerfile:set n8n-runners dockerfile-path Dockerfile.runners
 ```
 
-#### Set the Webhook URL
+### 3. Create and link Postgres
 
-Set the webhook URL for your n8n instance:
+Postgres is linked only to the main app. The runner app does not need database access.
 
 ```bash
-dokku config:set n8n WEBHOOK_URL=http://n8n.example.com
+dokku postgres:create n8n
+dokku postgres:link n8n n8n
 ```
 
-### 3. Configure Persistent Storage
+### 4. Create a private network
 
-To persist data between restarts (like community nodes, logs, etc...), create a folder on the host machine and mount it to the app container:
+Attach both apps to the same private Dokku network so the runner can reach the broker on `n8n.web:5679`.
+
+```bash
+dokku network:create n8n-internal
+dokku network:set n8n attach-post-create n8n-internal
+dokku network:set n8n-runners attach-post-create n8n-internal
+```
+
+If these apps were already deployed before you changed network settings, rebuild them so the new containers join the network:
+
+```bash
+dokku ps:rebuild n8n
+dokku ps:rebuild n8n-runners
+```
+
+### 5. Configure the main n8n app
+
+Generate stable secrets from your local machine or the Dokku host:
+
+```bash
+N8N_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+N8N_RUNNERS_AUTH_TOKEN="$(openssl rand -hex 32)"
+```
+
+Set the main app config:
+
+```bash
+dokku config:set n8n \
+  N8N_ENCRYPTION_KEY="$N8N_ENCRYPTION_KEY" \
+  WEBHOOK_URL="https://n8n.example.com" \
+  N8N_RUNNERS_ENABLED=true \
+  N8N_RUNNERS_MODE=external \
+  N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0 \
+  N8N_RUNNERS_AUTH_TOKEN="$N8N_RUNNERS_AUTH_TOKEN"
+```
+
+If you use Python Code nodes, also enable the native Python runner:
+
+```bash
+dokku config:set n8n N8N_NATIVE_PYTHON_RUNNER=true
+```
+
+Keep `N8N_ENCRYPTION_KEY` unchanged after the first deploy. Changing it can make stored credentials unreadable.
+
+### 6. Configure the runner app
+
+Use the same runner auth token value that you set on the main app.
+
+```bash
+dokku config:set n8n-runners \
+  N8N_RUNNERS_TASK_BROKER_URI=http://n8n.web:5679 \
+  N8N_RUNNERS_AUTH_TOKEN="$N8N_RUNNERS_AUTH_TOKEN"
+```
+
+### 7. Disable the runner proxy
+
+The runner app should not be publicly exposed.
+
+```bash
+dokku proxy:disable n8n-runners
+```
+
+### 8. Configure persistent storage
+
+Persist the main n8n data directory:
 
 ```bash
 dokku storage:ensure-directory n8n --chown false
@@ -76,89 +131,102 @@ chown 1000:1000 /var/lib/dokku/data/storage/n8n
 dokku storage:mount n8n /var/lib/dokku/data/storage/n8n:/home/node/.n8n
 ```
 
-### 4. Configure the Domain and Ports
+n8n 2.x restricts file-node access to `~/.n8n-files` by default. If your workflows read or write local files, mount that directory too:
 
-Set the domain for your app to enable routing:
+```bash
+dokku storage:ensure-directory n8n-files --chown false
+chown 1000:1000 /var/lib/dokku/data/storage/n8n-files
+dokku storage:mount n8n /var/lib/dokku/data/storage/n8n-files:/home/node/.n8n-files
+```
+
+### 9. Configure domains and ports
+
+Expose only the main app:
 
 ```bash
 dokku domains:set n8n n8n.example.com
+dokku ports:set n8n http:80:5678
+dokku ports:add n8n https:443:5678
 ```
 
-Map the internal port `5678` to the external port `80`:
+If you use dokku-letsencrypt:
 
 ```bash
-dokku ports:set n8n http:80:5678
+dokku letsencrypt:set n8n email you@example.com
+dokku letsencrypt:enable n8n
 ```
 
-### 5. Deploy the App
+### 10. Deploy
 
-You can deploy the app to your Dokku server using one of the following methods:
-
-#### Option 1: Deploy Using `dokku git:sync`
-
-If your repository is hosted on a remote Git server with an HTTPS URL, you can deploy the app directly to your Dokku server using `dokku git:sync`. This method also triggers a build process automatically. Run the following command:
+#### Option A: `dokku git:sync`
 
 ```bash
 dokku git:sync --build n8n https://github.com/d1ceward-on-dokku/n8n_on_dokku.git
+dokku git:sync --build n8n-runners https://github.com/d1ceward-on-dokku/n8n_on_dokku.git
 ```
 
-This will fetch the code from the specified repository, build the app, and deploy it to your Dokku server.
+#### Option B: manual Git remotes
 
-#### Option 2: Clone the Repository and Push Manually
+From your local clone:
 
-If you prefer to work with the repository locally, you can clone it to your machine and push it to your Dokku server manually:
+```bash
+git remote add dokku-n8n dokku@example.com:n8n
+git remote add dokku-n8n-runners dokku@example.com:n8n-runners
 
-1. Clone the repository:
+git push dokku-n8n master
+git push dokku-n8n-runners master
+```
 
-    ```bash
-    # Via HTTPS
-    git clone https://github.com/d1ceward-on-dokku/n8n_on_dokku.git
-    ```
+## Verifying the deployment
 
-2. Add your Dokku server as a Git remote:
+On the Dokku host:
 
-    ```bash
-    git remote add dokku dokku@example.com:n8n
-    ```
+```bash
+dokku ps:report n8n
+dokku ps:report n8n-runners
+dokku logs n8n --tail
+dokku logs n8n-runners --tail
+```
 
-3. Push the app to your Dokku server:
+Expected checks:
 
-    ```bash
-    git push dokku master
-    ```
+- the `n8n` app boots and listens publicly on port `5678`
+- the `n8n-runners` app boots without a public proxy
+- runner logs show a successful connection to `http://n8n.web:5679`
+- the n8n UI loads at `https://n8n.example.com`
+- webhooks use the configured `WEBHOOK_URL`
+- Postgres-backed data persists across main app restarts
+- JavaScript Code nodes can import `node-fetch`, `@paralleldrive/cuid2`, `franc`, and `@distube/ytdl-core`
 
-Choose the method that best suits your workflow.
+## Updating n8n
 
-### 6. Enable SSL (Optional)
+Run the `update` script from a maintainer checkout to move both Dockerfiles and the README badge to the latest stable n8n 2.x release.
 
-Secure your app with an SSL certificate from Let's Encrypt:
+```bash
+./update
+```
 
-1. Add the HTTPS port:
+The main and runner image versions must stay synchronized.
 
-    ```bash
-    dokku ports:add n8n https:443:5678
-    ```
+## Migrating from n8n 1.x to 2.x
 
-2. Install the Let's Encrypt plugin:
+For existing deployments:
 
-    ```bash
-    dokku plugin:install https://github.com/dokku/dokku-letsencrypt.git
-    ```
+1. Upgrade your current instance to the latest n8n 1.x release first.
+2. In the n8n UI, run **Settings > Migration Report**.
+3. Fix critical workflow and instance issues reported by the migration tool.
+4. Back up Postgres and `/home/node/.n8n`.
+5. Deploy the n8n 2.x main app and the `n8n-runners` app from this repo.
 
-3. Set the contact email for Let's Encrypt:
+Common n8n 2.x changes to review:
 
-    ```bash
-    dokku letsencrypt:set n8n email you@example.com
-    ```
+- Code node environment variable access is blocked by default.
+- `ExecuteCommand` and `LocalFileTrigger` are disabled by default.
+- OAuth callback URLs require authentication by default.
+- File access is restricted to `~/.n8n-files` by default.
+- Python Code nodes use native Python through external task runners; Pyodide-based Python was removed.
+- The Start node was removed; use Manual Trigger or Execute Workflow Trigger instead.
+- The old active/inactive workflow model changed to publish/unpublish.
+- In-memory binary data mode was removed; use filesystem, database, or S3-backed binary data.
 
-4. Enable Let's Encrypt for the app:
-
-    ```bash
-    dokku letsencrypt:enable n8n
-    ```
-
-## Wrapping Up
-
-Congratulations! Your n8n instance is now up and running. You can access it at [https://n8n.example.com](https://n8n.example.com).
-
-For more information about n8n, visit the [official documentation](https://docs.n8n.io/).
+Review the official [n8n v2.0 breaking changes](https://docs.n8n.io/2-0-breaking-changes/) before upgrading production.
