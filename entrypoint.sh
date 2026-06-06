@@ -8,32 +8,55 @@ else
   echo "N8N will start on '$PORT'"
 fi
 
-# Function to parse a URL into its components
-parse_url() {
-  eval "$(echo "$1" | sed -E \
-    -e "s#^(([^:]+)://)?(([^:@]+)(:([^@]+))?@)?([^/?]+)(/(.*))?#\
-${PREFIX:-URL_}SCHEME='\2' \
-${PREFIX:-URL_}USER='\4' \
-${PREFIX:-URL_}PASSWORD='\6' \
-${PREFIX:-URL_}HOSTPORT='\7' \
-${PREFIX:-URL_}DATABASE='\9'#")"
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "DATABASE_URL is required. Link a Dokku Postgres service to the n8n app." >&2
+  exit 1
+fi
+
+if ! database_exports="$(node <<'EOF'
+const databaseUrl = process.env.DATABASE_URL;
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-# Parse the DATABASE_URL and extract components
-PREFIX="N8N_DB_" parse_url "$DATABASE_URL"
-echo "$N8N_DB_SCHEME://$N8N_DB_USER:$N8N_DB_PASSWORD@$N8N_DB_HOSTPORT/$N8N_DB_DATABASE"
+try {
+  const url = new URL(databaseUrl);
+  const scheme = url.protocol.replace(/:$/, '');
 
-# Separate host and port
-N8N_DB_HOST="$(echo "$N8N_DB_HOSTPORT" | sed -E 's,:.*,,')"
-N8N_DB_PORT="$(echo "$N8N_DB_HOSTPORT" | sed -E 's,.*:([0-9]+).*,\1,')"
+  if (scheme !== 'postgres' && scheme !== 'postgresql') {
+    throw new Error(`Unsupported database scheme: ${scheme}`);
+  }
 
-# Export database environment variables
-export DB_TYPE="postgresdb"
-export DB_POSTGRESDB_HOST="$N8N_DB_HOST"
-export DB_POSTGRESDB_PORT="$N8N_DB_PORT"
-export DB_POSTGRESDB_DATABASE="$N8N_DB_DATABASE"
-export DB_POSTGRESDB_USER="$N8N_DB_USER"
-export DB_POSTGRESDB_PASSWORD="$N8N_DB_PASSWORD"
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ''));
+
+  if (!url.hostname || !database || !url.username) {
+    throw new Error('DATABASE_URL must include host, database, and user');
+  }
+
+  const values = {
+    DB_TYPE: 'postgresdb',
+    DB_POSTGRESDB_HOST: url.hostname,
+    DB_POSTGRESDB_PORT: url.port || '5432',
+    DB_POSTGRESDB_DATABASE: database,
+    DB_POSTGRESDB_USER: decodeURIComponent(url.username),
+    DB_POSTGRESDB_PASSWORD: decodeURIComponent(url.password),
+  };
+
+  for (const [key, value] of Object.entries(values)) {
+    console.log(`export ${key}=${shellQuote(value)}`);
+  }
+} catch (error) {
+  console.error(`Invalid DATABASE_URL: ${error.message}`);
+  process.exit(1);
+}
+EOF
+)"; then
+  exit 1
+fi
+
+eval "$database_exports"
+echo "Configured Postgres database '$DB_POSTGRESDB_DATABASE' on '$DB_POSTGRESDB_HOST:$DB_POSTGRESDB_PORT'."
 
 if [ -d /opt/custom-certificates ]; then
   echo "Trusting custom certificates from /opt/custom-certificates."

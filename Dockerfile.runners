@@ -1,0 +1,12 @@
+ARG N8N_VERSION="2.25.5"
+
+FROM n8nio/runners:${N8N_VERSION}
+
+USER root
+
+RUN cd /opt/runners/task-runner-javascript && \
+    pnpm add node-fetch @paralleldrive/cuid2 franc @distube/ytdl-core
+
+COPY ./n8n-task-runners.json /etc/n8n-task-runners.json
+
+USER runner
